@@ -105,13 +105,13 @@ caching, re-running the matcher would re-geocode "CHICAGO, IL" dozens
 of times against a rate-limited free API (~1 req/sec) for no reason.
 The cache (`geocode_cache.json`) persists across runs.
 
-## Known limitations (be upfront about these)
+## Known limitations
 
 - **The parser's column layout is tuned to one broker's export
   format.** A different broker's spreadsheet with columns in a
   different order would need the column indices in `parser.py`
   adjusted. This is a genuine limitation, not a "works on anything"
-  claim — be ready to explain this trade-off if asked.
+  claim — 
 - **Rate outlier detection doesn't account for lane length.**
   Short-haul loads naturally have higher $/mile than long-haul loads
   because of fixed costs — a single global mean/stdev across all
