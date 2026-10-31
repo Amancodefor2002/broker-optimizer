@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Load board — broker dashboard</title>
+<style>
+  :root {
+    --ink: #16181c;
+    --panel: #1e2126;
+    --panel-line: #2b2f36;
+    --paper: #f3f1ea;
+    --amber: #e08a2c;
+    --green: #4d8b5f;
+    --red: #c4515f;
+    --blue: #3f7fbf;
+    --text-dim: #9a9da3;
+    --mono: "IBM Plex Mono", "SF Mono", Menlo, monospace;
+    --sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--sans); background: var(--paper); color: var(--ink); }
+  .topbar {
+    background: var(--panel);
+    color: #fff;
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .wordmark { font-family: var(--mono); font-size: 12px; color: var(--amber); text-transform: uppercase; letter-spacing: 0.08em; }
+  .topbar h1 { font-size: 18px; margin: 2px 0 0 0; }
+  .upload-area { display: flex; align-items: center; gap: 10px; }
+  .upload-area input[type=file] { font-family: var(--sans); font-size: 12px; color: #e7e5df; }
+  button {
+    padding: 9px 16px;
+    border-radius: 4px;
+    border: none;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .btn-primary { background: var(--amber); color: #1a1206; }
+  .btn-primary:hover { background: #ec9838; }
+  .btn-primary:disabled { background: #4a4234; color: #8a8175; cursor: not-allowed; }
+  .container { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+  .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 22px; }
+  .stat-card {
+    background: #fff;
+    border: 1px solid #e2ddd0;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .stat-card .label { font-family: var(--mono); font-size: 11px; color: #8a8578; text-transform: uppercase; }
+  .stat-card .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .stat-card.warn .value { color: var(--red); }
+  .section { margin-bottom: 28px; }
+  .section h2 { font-size: 15px; margin-bottom: 10px; color: #4a463c; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 6px; overflow: hidden; font-size: 13px; }
+  th { background: var(--panel); color: #e7e5df; text-align: left; padding: 8px 10px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
+  td { padding: 7px 10px; border-bottom: 1px solid #ece8dc; font-family: var(--mono); }
+  tr.flagged-dup { background: #fdeceb; }
+  tr.flagged-missing { background: #fdf6e8; }
+  tr.flagged-outlier-high { background: #fdeceb; }
+  tr.flagged-outlier-low { background: #e9f2fc; }
+  .tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; margin-left: 4px; }
+  .tag-green { background: #dcefe1; color: var(--green); }
+  .tag-blue { background: #dfeaf7; color: var(--blue); }
+  .empty-state { color: var(--text-dim); font-size: 13px; padding: 30px; text-align: center; }
+  .backhaul-btn-row { margin: 10px 0 16px 0; }
+  #status { font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+  #status.err { color: var(--red); }
+  .match-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fff; border: 1px solid #e2ddd0; border-radius: 5px; margin-bottom: 6px; font-family: var(--mono); font-size: 12px; }
+  .match-arrow { color: var(--amber); font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div>
+    <div class="wordmark">broker load board tool</div>
+    <h1>Load board dashboard</h1>
+  </div>
+  <div class="upload-area">
+    <input type="file" id="fileInput" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" />
+    <button class="btn-primary" id="parseBtn">Parse loads</button>
+  </div>
+</div>
+
+<div class="container">
+  <div id="statusWrap"><div id="status">Upload a broker load board export (.xlsx) to begin.</div></div>
+
+  <div id="results" style="display:none;">
+    <div class="stat-row">
+      <div class="stat-card"><div class="label">Loads found</div><div class="value" id="statLoads">—</div></div>
+      <div class="stat-card warn"><div class="label">Duplicates</div><div class="value" id="statDup">—</div></div>
+      <div class="stat-card warn"><div class="label">Missing fields</div><div class="value" id="statMissing">—</div></div>
+      <div class="stat-card"><div class="label">Avg $/mile</div><div class="value" id="statAvgRate">—</div></div>
+      <div class="stat-card warn"><div class="label">Rate outliers</div><div class="value" id="statOutliers">—</div></div>
+    </div>
+
+    <div class="section">
+      <h2>Backhaul matching</h2>
+      <div class="backhaul-btn-row">
+        <button class="btn-primary" id="backhaulBtn">Find backhaul matches</button>
+        <span id="backhaulStatus" style="font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-left: 10px;"></span>
+      </div>
+      <div id="backhaulResults"></div>
+    </div>
+
+    <div class="section">
+      <h2>Parsed loads</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Origin</th><th>Destination</th><th>Pickup</th><th>Miles</th><th>Rate</th><th>$/mi</th><th>Status</th></tr>
+        </thead>
+        <tbody id="loadsTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = "";
+  const el = id => document.getElementById(id);
+  let currentLoads = [];
+  let currentValidation = null;
+  let currentRates = null;
+
+  el("parseBtn").addEventListener("click", async () => {
+    const file = el("fileInput").files[0];
+    const statusEl = el("status");
+    if (!file) {
+      statusEl.textContent = "Choose a .xlsx file first.";
+      statusEl.className = "err";
+      return;
+    }
+    statusEl.textContent = "Parsing…";
+    statusEl.className = "";
+    el("parseBtn").disabled = true;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${API}/api/parse`, { method: "POST", body: formData });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.detail || `Server returned ${res.status}`);
+
+      currentLoads = body.loads;
+      currentValidation = body.validation;
+      currentRates = body.rate_analysis;
+      render(body);
+      statusEl.textContent = `Scanned ${body.total_rows_scanned} rows, found ${body.loads.length} loads, skipped ${body.skipped_rows} non-load rows.`;
+    } catch (e) {
+      statusEl.textContent = `Failed: ${e.message}`;
+      statusEl.className = "err";
+    } finally {
+      el("parseBtn").disabled = false;
+    }
+  });
+
+  function render(body) {
+    el("results").style.display = "block";
+    el("statLoads").textContent = body.loads.length;
+    el("statDup").textContent = body.validation.duplicate_count;
+    el("statMissing").textContent = body.validation.missing_field_count;
+    el("statAvgRate").textContent = `$${body.rate_analysis.average_rate_per_mile}`;
+    el("statOutliers").textContent = body.rate_analysis.outlier_count;
+
+    const flagsByRow = {};
+    body.validation.flags.forEach(f => {
+      flagsByRow[f.row_index] = flagsByRow[f.row_index] || [];
+      flagsByRow[f.row_index].push(f);
+    });
+    const ratesByRow = {};
+    body.rate_analysis.stats.forEach(s => { ratesByRow[s.row_index] = s; });
+
+    const tbody = el("loadsTableBody");
+    tbody.innerHTML = "";
+    body.loads.forEach(load => {
+      const flags = flagsByRow[load.row_index] || [];
+      const rateStat = ratesByRow[load.row_index];
+      const tr = document.createElement("tr");
+
+      if (flags.some(f => f.flag_type === "duplicate")) tr.classList.add("flagged-dup");
+      else if (rateStat && rateStat.is_outlier) {
+        tr.classList.add(rateStat.rate_per_mile > body.rate_analysis.average_rate_per_mile ? "flagged-outlier-high" : "flagged-outlier-low");
+      } else if (flags.length) tr.classList.add("flagged-missing");
+
+      const colorTag = load.color_status
+        ? `<span class="tag tag-${load.color_status.toLowerCase()}">${load.color_status}</span>`
+        : "";
+      const flagText = flags.map(f => f.flag_type.replace(/_/g, " ")).join(", ");
+
+      tr.innerHTML = `
+        <td>${load.row_index}</td>
+        <td>${load.origin}</td>
+        <td>${load.destination || "<em>TBD</em>"}</td>
+        <td>${load.pickup_info || "—"}</td>
+        <td>${load.miles ?? "—"}</td>
+        <td>${load.rate != null ? "$" + load.rate : "—"}</td>
+        <td>${rateStat && rateStat.rate_per_mile != null ? "$" + rateStat.rate_per_mile.toFixed(2) : "—"}</td>
+        <td>${colorTag} ${flagText ? `<span style="color:var(--red); font-size:11px;">${flagText}</span>` : ""}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  el("backhaulBtn").addEventListener("click", async () => {
+    const statusEl = el("backhaulStatus");
+    const resultsEl = el("backhaulResults");
+    if (!currentLoads.length) return;
+
+    statusEl.textContent = "Geocoding cities and solving assignment… this can take a while on first run.";
+    el("backhaulBtn").disabled = true;
+
+    try {
+      const res = await fetch(`${API}/api/backhaul-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loads: currentLoads })
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.detail || `Server returned ${res.status}`);
+
+      const result = body.backhaul_result;
+      statusEl.textContent = `${result.matches.length} matches found, ${result.total_deadhead_miles} total deadhead miles, ${result.unmatched_load_rows.length} loads left unmatched.`;
+      if (body.geocode_failures.length) {
+        statusEl.textContent += ` (${body.geocode_failures.length} cities could not be geocoded)`;
+      }
+
+      const loadsByRow = {};
+      currentLoads.forEach(l => { loadsByRow[l.row_index] = l; });
+
+      resultsEl.innerHTML = "";
+      result.matches.forEach(m => {
+        const from = loadsByRow[m.from_load_row];
+        const to = loadsByRow[m.to_load_row];
+        const div = document.createElement("div");
+        div.className = "match-row";
+        div.innerHTML = `Load ${m.from_load_row} (${from.origin} → ${from.destination})
+          <span class="match-arrow">⟶</span>
+          Load ${m.to_load_row} (${to.origin} → ${to.destination})
+          <span style="margin-left:auto; color:var(--text-dim);">${m.deadhead_miles} mi deadhead</span>`;
+        resultsEl.appendChild(div);
+      });
+    } catch (e) {
+      statusEl.textContent = `Failed: ${e.message}`;
+    } finally {
+      el("backhaulBtn").disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
