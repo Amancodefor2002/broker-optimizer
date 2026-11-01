@@ -35,16 +35,21 @@ app/
   parser.py           Pattern-based extraction of load rows from messy exports
   validation.py        Duplicate detection + missing-field flagging
   rate_analysis.py     $/mile computation and statistical outlier detection
-  geocode.py            City geocoding with a persistent disk cache
+  geocode.py            "City, ST" -> coordinates: offline table, typo matching, online fallback
   backhaul.py            Deadhead-minimizing assignment via OR-Tools
   main.py                 FastAPI routes wiring it together
+  data/us_cities.csv      ~36,000 US places for offline lookups (sources: data/SOURCES.md)
 frontend/
   index.html    Dashboard — upload, parsed table with flags, backhaul results
+scripts/
+  build_city_table.py      Rebuilds data/us_cities.csv from its two sources
 tests/
   test_parser.py           Extraction correctness on a realistic messy fixture
   test_validation.py       Duplicate/missing-field logic, including edge cases
   test_rate_analysis.py    Outlier detection, division-by-zero safety
   test_backhaul.py         Assignment correctness on synthetic geometric cases
+  test_geocode.py          Spelling variants, typo correction, online fallback (network faked)
+  test_api.py              Upload -> parse -> match through the HTTP API
 samples/
   sample_load_board.xlsx   Synthetic file replicating the real messy structure
 ```
@@ -99,11 +104,31 @@ penalty cost (`NULL_MATCH_PENALTY_MILES`, currently 300mi) representing
 when it beats that penalty, and self-matches in the result mean
 "legitimately left unmatched," not a bug.
 
-**Why cache geocoding results to disk?**
-This dataset has 328 loads but only ~220 unique cities. Without
-caching, re-running the matcher would re-geocode "CHICAGO, IL" dozens
-of times against a rate-limited free API (~1 req/sec) for no reason.
-The cache (`geocode_cache.json`) persists across runs.
+**How do city names become map coordinates?**
+The first version sent every unique city to the free Nominatim API,
+one request per second, so a 300-load board took minutes. Now there
+are three layers, fastest first:
+1. An offline table of ~36,000 US places, looked up in memory.
+   Spelling variants share one key: "ST LOUIS", "St. Louis" and
+   "SAINT LOUIS" are the same city, and so are "LA PORTE" and "LAPORTE".
+2. Typo matching within the same state ("ABLIENE,TX" → Abilene, TX).
+   Every correction is returned so the broker can check it.
+3. Nominatim, only for the few names still unknown (usually tiny
+   quarry or plant towns): at most 10 new names per upload, 1 request
+   a second, cached, and rejected if the result is in another state.
+
+On the two real load boards (510 loads, 347 distinct city strings),
+319 matched the table exactly, 22 typos were corrected and 6 were left
+for the online layer. Parsing plus city lookup now takes under a second.
+
+**Why a 0.85 similarity cutoff for typo matching?**
+It was measured, not picked. At 0.85 all 22 typos in the real files
+were fixed. To estimate the risk, real towns were hidden from the table
+to see how often the matcher would map them to a *different* town:
+about 3% of the time at 0.85, against about 11% at 0.80. Candidates
+must also start with the same letter, because a typo rarely changes
+the first letter: "ASHVILLE, NC" is as close to Nashville as to
+Asheville by spelling alone.
 
 ## Known limitations
 
@@ -111,7 +136,7 @@ The cache (`geocode_cache.json`) persists across runs.
   format.** A different broker's spreadsheet with columns in a
   different order would need the column indices in `parser.py`
   adjusted. This is a genuine limitation, not a "works on anything"
-  claim — 
+  claim.
 - **Rate outlier detection doesn't account for lane length.**
   Short-haul loads naturally have higher $/mile than long-haul loads
   because of fixed costs — a single global mean/stdev across all
@@ -123,16 +148,17 @@ The cache (`geocode_cache.json`) persists across runs.
   loads might be geographically perfect for chaining but have pickup
   dates that make it physically impossible. A production version
   would need to factor in pickup/delivery windows.
-- **Geocoding uses free Nominatim, rate-limited to ~1 req/sec.** A
-  broker running this on a large board for the first time (before
-  the cache warms up) will see a real wait — a paid geocoding API
-  would remove this bottleneck.
+- **City lookup is US-only and can still miss tiny places.** Names the
+  offline table doesn't know depend on the online layer, which is
+  capped at 10 new names per upload. Anything it can't confirm is
+  reported as unresolved rather than guessed, so those loads don't
+  appear on the map or in matching.
 
 ## Running it
 
 ```bash
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --reload-dir app
 # open http://127.0.0.1:8000
 ```
 
@@ -152,9 +178,11 @@ pytest tests/ -v
 
 - `POST /api/parse` — multipart upload, field name `file`. Accepts
   `.xlsx`/`.xls`. Returns `{loads, skipped_rows, total_rows_scanned,
-  validation, rate_analysis}`.
+  geocoding: {corrected, unresolved}, validation, rate_analysis}`.
+  Each load comes back with `origin_lat/lon` and `destination_lat/lon`
+  filled in wherever the city was found.
 - `POST /api/backhaul-match` — body: `{loads: [...]}` (the exact
-  `loads` array from `/api/parse`). Geocodes and returns
+  `loads` array from `/api/parse`). Returns
   `{backhaul_result: {matches, unmatched_load_rows,
   total_deadhead_miles}, geocode_failures}`.
 - `GET /health`

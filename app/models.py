@@ -32,6 +32,16 @@ class ParseResult(BaseModel):
     total_rows_scanned: int
 
 
+class CityCorrection(BaseModel):
+    original: str  # as written in the export, e.g. "ABLIENE,TX"
+    matched: str  # the place it was matched to, e.g. "Abilene, TX"
+
+
+class GeocodeReport(BaseModel):
+    corrected: list[CityCorrection]  # typos fixed automatically, shown so the broker can check them
+    unresolved: list[str]  # city strings that couldn't be placed on the map
+
+
 class ValidationFlag(BaseModel):
     row_index: int
     flag_type: str  # "duplicate" | "missing_destination" | "missing_rate" | "missing_miles"
