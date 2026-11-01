@@ -28,6 +28,7 @@ from app.rate_analysis import analyze_rates
 from app.validation import validate_loads
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"  # works whichever folder the server starts from
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # real load-board exports are well under 1 MB; this keeps a public server safe
 
 app = FastAPI(
     title="Broker Load Board Optimizer",
@@ -47,7 +48,12 @@ app.add_middleware(
 # so slow work (online city lookups, the solver) can't freeze the server for other users.
 @app.post("/api/parse")
 def parse_endpoint(file: UploadFile = File(...)) -> dict:
-    file_bytes = file.file.read()
+    file_bytes = file.file.read(MAX_UPLOAD_BYTES + 1)  # never read more than the limit into memory
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="This file is larger than 5 MB. Load-board exports are usually well under 1 MB, so check it's the right file.",
+        )
     try:
         result = parse_workbook(file_bytes)
     except ValueError as exc:

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app import main
 from app.main import app
 
 client = TestClient(app)
@@ -39,6 +40,13 @@ def test_backhaul_matching_runs_on_parsed_loads():
 def test_rejects_a_file_that_is_not_excel():
     res = client.post("/api/parse", files={"file": ("notes.txt", b"hello")})
     assert res.status_code == 422
+
+
+def test_rejects_a_file_over_the_size_limit(monkeypatch):
+    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 10)
+    res = client.post("/api/parse", files={"file": ("huge.xlsx", b"x" * 11)})
+    assert res.status_code == 413
+    assert "5 MB" in res.json()["detail"]
 
 
 def test_dashboard_and_its_map_library_are_served():

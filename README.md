@@ -206,10 +206,24 @@ Run tests:
 pytest tests/ -v
 ```
 
+## Deploying
+
+The repo includes a Render Blueprint (`render.yaml`). In Render, choose
+**New > Blueprint**, pick this repository and confirm. Render installs
+`requirements.txt`, starts `uvicorn` on the port it provides, and checks
+`/health` before sending traffic. `.python-version` pins Python 3.13,
+the version the tests run on; new Render services would otherwise start
+on a newer default.
+
+On the free plan the service sleeps after 15 minutes without traffic,
+so the first visit after that takes about a minute while it wakes up.
+Its disk is wiped on every restart, which only loses the small cache of
+city names looked up online.
+
 ## API
 
 - `POST /api/parse` — multipart upload, field name `file`. Accepts
-  `.xlsx`/`.xls`. Returns `{loads, skipped_rows, total_rows_scanned,
+  `.xlsx`/`.xls` up to 5 MB (larger files get a 413). Returns `{loads, skipped_rows, total_rows_scanned,
   geocoding: {corrected, unresolved}, validation, rate_analysis}`.
   Each load comes back with `origin_lat/lon` and `destination_lat/lon`
   filled in wherever the city was found.
