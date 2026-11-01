@@ -205,11 +205,21 @@
   .checks li { font-size: 13px; padding-left: 10px; border-left: 3px solid var(--line-strong); color: var(--ink-2); }
   .checks li.red { border-left-color: var(--red); }
   .checks li.amber { border-left-color: #d9a441; }
-  .next { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-  .next-route { font-weight: 600; margin: 0 0 6px; }
-  .next .stats { margin: 8px 0 10px; }
-  .next .stats dd { font-size: 16px; }
-  .next-note { font-size: 13px; color: var(--ink-2); margin: 0 0 10px; }
+  .options { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+  .option {
+    all: unset; box-sizing: border-box; cursor: pointer; width: 100%;
+    display: grid; row-gap: 2px;
+    padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  }
+  .option:hover { border-color: var(--line-strong); }
+  .option:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+  .option[aria-pressed="true"] { border-color: var(--teal); background: var(--teal-soft); }
+  .opt-route { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opt-pay { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .opt-pay small { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+  .opt-meta { font-size: 12.5px; color: var(--ink-2); }
+  .fleet-note { font-size: 13px; color: var(--ink-2); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
+  .fleet-note .link { border: 0; background: none; padding: 0; color: var(--teal-dark); text-decoration: underline; font-weight: 500; }
   .detail p.explain { font-size: 13px; color: var(--muted); margin: 0; }
   .detail h2.panel-title { font-size: 16px; }
   .detail .hint { font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
@@ -345,7 +355,7 @@
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const COLORS = { ink: "#16233a", muted: "#66748a", teal: "#0c8587", orange: "#d9771c" };
   const TAG_COLORS = { GREEN: "#2f8a4c", BLUE: "#2f6fb5", YELLOW: "#c99a06", RED: "#b93a3a" };
-  const NO_NEXT_LOAD_MILES = 300; // matches NULL_MATCH_PENALTY_MILES in app/backhaul.py
+  const NO_NEXT_LOAD_MILES = 300; // matches NULL_MATCH_PENALTY_MILES / MAX_EMPTY_MILES on the server
 
   const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
   const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -357,7 +367,9 @@
     corrections: new Map(), unresolved: new Set(),
     rateAvg: null, rateMedian: null,
     matches: new Map(), backhaul: null,
+    options: new Map(),   // load row -> best next loads for that truck, by pay per mile driven
     selected: null,
+    preview: null,        // which next load the map is showing for the selected load
     filter: { q: "", origin: "", needsLook: false },
     sort: { key: "row", dir: 1 },
   };
@@ -396,7 +408,9 @@
     state.unresolved = new Set(body.geocoding.unresolved);
     state.matches = new Map();
     state.backhaul = null;
+    state.options = new Map();
     state.selected = null;
+    state.preview = null;
     state.filter = { q: "", origin: "", needsLook: false };
 
     const flagsByRow = new Map();
@@ -479,6 +493,7 @@
       });
       state.backhaul = matched.backhaul_result;
       state.matches = new Map(matched.backhaul_result.matches.map((m) => [m.from_load_row, { to: m.to_load_row, deadhead: m.deadhead_miles }]));
+      state.options = new Map(Object.entries(matched.next_load_options).map(([row, opts]) => [Number(row), opts]));
       renderKpis();
       renderDetail();
       drawSelection();
@@ -539,7 +554,7 @@
     } else {
       const n = state.backhaul.matches.length;
       $("#kpiEmpty").textContent = `${whole.format(state.backhaul.total_deadhead_miles)} mi`;
-      $("#kpiEmptySub").textContent = `${whole.format(n)} load${n === 1 ? " has" : "s have"} a next load`;
+      $("#kpiEmptySub").textContent = `Fleet-wide plan chaining ${whole.format(n)} load${n === 1 ? "" : "s"}`;
     }
   }
 
@@ -673,8 +688,16 @@
         <div><dt>Per mile</dt><dd>${perMile(rpm)}</dd></div>
       </dl>
       ${checks.length ? `<h3 class="section-title">Check before quoting</h3><ul class="checks">${checks.join("")}</ul>` : ""}
-      <h3 class="section-title">Next load for this truck</h3>
-      ${nextLoadHtml(l, to)}`;
+      <h3 class="section-title">Best next loads for this truck</h3>
+      ${nextLoadsHtml(l, to)}`;
+    for (const b of el.querySelectorAll("[data-preview]")) {
+      b.addEventListener("click", () => {
+        state.preview = Number(b.dataset.preview);
+        renderDetail();
+        drawSelection();
+        el.querySelector(`.option[data-preview="${state.preview}"]`)?.focus();
+      });
+    }
     const show = el.querySelector("[data-show]");
     if (show) show.addEventListener("click", () => select(Number(show.dataset.show)));
   }
@@ -706,30 +729,56 @@
     }
   }
 
-  function nextLoadHtml(l, to) {
-    if (!state.backhaul) return '<p class="explain">Working out the next load…</p>';
-    const m = state.matches.get(l.row_index);
-    const n = m && state.byRow.get(m.to);
-    if (n) {
-      const nFrom = fromName(n), nTo = toName(n);
-      const note = m.deadhead < 1
-        ? "It starts where this load ends, so the truck doesn't drive empty."
-        : `The truck drives ${whole.format(m.deadhead)} miles empty from ${esc(to)} to ${esc(nFrom)} to pick it up.`;
-      return `<div class="next">
-          <p class="next-route">${esc(nFrom)} → ${nTo ? esc(nTo) : "destination not set"}</p>
-          <dl class="stats">
-            <div><dt>Empty miles</dt><dd>${whole.format(m.deadhead)}</dd></div>
-            <div><dt>Rate</dt><dd>${n.rate != null ? money.format(n.rate) : "–"}</dd></div>
-            <div><dt>Per mile</dt><dd>${perMile(state.rates.get(n.row_index)?.rate_per_mile)}</dd></div>
-          </dl>
-          <p class="next-note">${note}</p>
-          <button class="btn-secondary" type="button" data-show="${n.row_index}">Show load ${n.row_index}</button>
-        </div>`;
+  // The next load the map shows: the one picked in the panel, else the
+  // best-paying option, else the fleet-wide plan's pick.
+  function previewNext(l) {
+    const opts = state.options.get(l.row_index) || [];
+    const fleet = state.matches.get(l.row_index);
+    const row = state.preview ?? opts[0]?.row_index ?? fleet?.to;
+    if (row == null) return null;
+    const opt = opts.find((o) => o.row_index === row);
+    const empty = opt ? opt.empty_miles : fleet && fleet.to === row ? fleet.deadhead : null;
+    return { row, empty };
+  }
+
+  function nextLoadsHtml(l, to) {
+    if (!state.backhaul) return '<p class="explain">Working out the next loads…</p>';
+    if (!l.destination || l.destination_lat == null) {
+      return '<p class="explain">The delivery city has to be on the map before next loads can be suggested.</p>';
     }
-    if (!l.destination || l.destination_lat == null || l.origin_lat == null) {
-      return '<p class="explain">Both cities have to be on the map before a next load can be chained.</p>';
+    const opts = state.options.get(l.row_index) || [];
+    const fleet = state.matches.get(l.row_index);
+    const shown = previewNext(l);
+    let html = "";
+    if (opts.length) {
+      html += '<p class="hint">Ranked by pay per mile driven, counting the empty drive to the pickup.</p><ol class="options">';
+      for (const o of opts) {
+        const n = state.byRow.get(o.row_index);
+        const empty = o.empty_miles < 1 ? "no empty miles" : `${whole.format(o.empty_miles)} empty mi`;
+        html += `<li><button class="option" type="button" data-preview="${o.row_index}" aria-pressed="${shown?.row === o.row_index}">
+            <span class="opt-route">${esc(fromName(n))} → ${esc(toName(n) || "not set")}</span>
+            <span class="opt-pay">${perMile(o.effective_rate_per_mile)} <small>per mile driven</small></span>
+            <span class="opt-meta">Load ${n.row_index}: ${empty}, then ${whole.format(n.miles)} loaded mi for ${money.format(n.rate)}</span>
+          </button></li>`;
+      }
+      html += "</ol>";
+    } else {
+      html += `<p class="explain">No load with a rate starts within ${NO_NEXT_LOAD_MILES} empty miles of ${esc(to)}.</p>`;
     }
-    return `<p class="explain">No next load is chained after this one. Either nothing starts within ${NO_NEXT_LOAD_MILES} empty miles of ${esc(to)}, or the loads nearby fit better after another delivery.</p>`;
+    if (shown) html += `<button class="btn-secondary" type="button" data-show="${shown.row}">Open load ${shown.row}</button>`;
+
+    // How this compares with the fleet-wide plan, which keeps empty miles lowest for all trucks together.
+    if (fleet && fleet.to === opts[0]?.row_index) {
+      html += '<p class="fleet-note">The fleet-wide plan picks this load too.</p>';
+    } else if (fleet) {
+      html += `<p class="fleet-note">The fleet-wide plan sends this truck to load ${fleet.to} instead
+        (${whole.format(fleet.deadhead)} empty mi). That plan keeps total empty miles lowest across all
+        trucks, rather than getting the most out of this one.
+        <button class="link" type="button" data-preview="${fleet.to}">Show it on the map</button></p>`;
+    } else if (opts.length) {
+      html += '<p class="fleet-note">The fleet-wide plan leaves this truck free: the loads nearby fit better after other deliveries.</p>';
+    }
+    return html;
   }
 
   // ---------- map ----------
@@ -817,8 +866,8 @@
     const a = l.origin_lat != null ? [l.origin_lat, l.origin_lon] : null;
     const b = l.destination_lat != null ? [l.destination_lat, l.destination_lon] : null;
 
-    const m = state.matches.get(l.row_index);
-    const n = m && state.byRow.get(m.to);
+    const next = previewNext(l);
+    const n = next && state.byRow.get(next.row);
     if (n && b && n.origin_lat != null) {
       const c = [n.origin_lat, n.origin_lon];
       if (n.destination_lat != null) {
@@ -828,9 +877,9 @@
           .bindTooltip(`Load ${n.row_index} ends in ${esc(toName(n))}`).addTo(selectionLayer);
         points.push(d);
       }
-      if (m.deadhead >= 1) {
+      if (next.empty == null || next.empty >= 1) {
         L.polyline(arc(b, c), { color: COLORS.orange, weight: 3, dashArray: "6 7" })
-          .bindTooltip(`${whole.format(m.deadhead)} empty miles`).addTo(selectionLayer);
+          .bindTooltip(next.empty == null ? "Empty drive" : `${whole.format(next.empty)} empty miles`).addTo(selectionLayer);
       }
       points.push(c);
     }
@@ -843,6 +892,7 @@
   // ---------- interaction ----------
   function select(row, { scroll = true } = {}) {
     state.selected = row;
+    state.preview = null; // start from the best-paying next load
     for (const tr of document.querySelectorAll('#rows tr[aria-selected="true"]')) tr.removeAttribute("aria-selected");
     const tr = document.querySelector(`#rows tr[data-row="${row}"]`);
     if (tr) {
@@ -855,6 +905,7 @@
 
   function clearSelection() {
     state.selected = null;
+    state.preview = null;
     for (const tr of document.querySelectorAll('#rows tr[aria-selected="true"]')) tr.removeAttribute("aria-selected");
     selectionLayer.clearLayers();
     renderDetail();

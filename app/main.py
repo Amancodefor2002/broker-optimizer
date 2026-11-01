@@ -3,7 +3,7 @@ FastAPI entrypoint for the broker load board tool.
 
 Endpoints:
   POST /api/parse             -- upload a broker export, get back clean loads (with map coordinates) + flags + rate stats
-  POST /api/backhaul-match     -- given already-parsed loads, compute backhaul matches
+  POST /api/backhaul-match     -- given already-parsed loads, compute fleet-wide matches + best next loads per truck
   GET  /                       -- serves the demo frontend
 
 Run locally with:
@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from app.backhaul import match_backhauls
 from app.geocode import attach_coordinates
 from app.models import Load
+from app.next_loads import rank_next_loads
 from app.parser import parse_workbook
 from app.rate_analysis import analyze_rates
 from app.validation import validate_loads
@@ -74,10 +75,13 @@ class BackhaulRequest(BaseModel):
 def backhaul_endpoint(req: BackhaulRequest) -> dict:
     # Look coordinates up again on the server rather than trusting what the client sent back.
     geocoding = attach_coordinates(req.loads)
-    result = match_backhauls(req.loads)
+    result = match_backhauls(req.loads)  # fleet-wide: fewest empty miles across all trucks
+    options = rank_next_loads(req.loads)  # per truck: best pay per mile driven
 
     return {
         "backhaul_result": result.model_dump(),
+        # JSON object keys are strings, so row numbers arrive as "6", "7", ...
+        "next_load_options": {str(row): [o.model_dump() for o in opts] for row, opts in options.items()},
         "geocode_failures": geocoding.unresolved,
     }
 

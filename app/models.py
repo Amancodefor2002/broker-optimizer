@@ -82,3 +82,9 @@ class BackhaulResult(BaseModel):
     matches: list[BackhaulMatch]
     unmatched_load_rows: list[int]
     total_deadhead_miles: float
+
+
+class NextLoadOption(BaseModel):
+    row_index: int  # the load the truck could take next
+    empty_miles: float  # straight line from the current delivery city to this load's pickup city
+    effective_rate_per_mile: float  # this load's rate / (empty miles + its loaded miles)

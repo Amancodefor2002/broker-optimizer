@@ -37,6 +37,7 @@ app/
   rate_analysis.py     $/mile computation and statistical outlier detection
   geocode.py            "City, ST" -> coordinates: offline table, typo matching, online fallback
   backhaul.py            Deadhead-minimizing assignment via OR-Tools
+  next_loads.py          Best next loads for one truck, ranked by effective $/mile
   main.py                 FastAPI routes wiring it together
   data/us_cities.csv      ~36,000 US places for offline lookups (sources: data/SOURCES.md)
 frontend/
@@ -49,6 +50,7 @@ tests/
   test_validation.py       Duplicate/missing-field logic, including edge cases
   test_rate_analysis.py    Outlier detection, division-by-zero safety
   test_backhaul.py         Assignment correctness on synthetic geometric cases
+  test_next_loads.py       Ranking by effective $/mile, distance cut-off, unpriceable loads
   test_geocode.py          Spelling variants, typo correction, online fallback (network faked)
   test_api.py              Upload -> parse -> match through the HTTP API
 samples/
@@ -104,6 +106,21 @@ penalty cost (`NULL_MATCH_PENALTY_MILES`, currently 300mi) representing
 "stay idle instead of chaining." The solver only proposes a real match
 when it beats that penalty, and self-matches in the result mean
 "legitimately left unmatched," not a bug.
+
+**Why rank next loads per truck when the matcher already pairs loads?**
+The two answer different questions. The matcher minimises empty miles
+for the whole fleet at once. A dispatcher looking at one truck asks
+which load pays *that truck* best after its delivery, which is
+measured by effective rate per mile:
+
+    next load's rate / (empty miles to its pickup + its loaded miles)
+
+Plain $/mile hides the empty drive: a $1,000 load 250 empty miles away
+pays $2.22 per mile driven, while a $900 load 20 miles away pays $4.09.
+On the real board, the best-paying next load and the fleet-wide pick
+were the same load for only 6 of 185 loads, so the dashboard shows the
+top three options and says when the fleet-wide plan would choose
+differently, rather than hiding either view.
 
 **How do city names become map coordinates?**
 The first version sent every unique city to the free Nominatim API,
@@ -199,5 +216,8 @@ pytest tests/ -v
 - `POST /api/backhaul-match` — body: `{loads: [...]}` (the exact
   `loads` array from `/api/parse`). Returns
   `{backhaul_result: {matches, unmatched_load_rows,
-  total_deadhead_miles}, geocode_failures}`.
+  total_deadhead_miles}, next_load_options, geocode_failures}`.
+  `next_load_options` maps each load's row number (as a string) to up
+  to three `{row_index, empty_miles, effective_rate_per_mile}` options,
+  best first.
 - `GET /health`

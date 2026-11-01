@@ -27,7 +27,13 @@ def test_backhaul_matching_runs_on_parsed_loads():
     loads = _parse_sample()["loads"]
     res = client.post("/api/backhaul-match", json={"loads": loads})
     assert res.status_code == 200
-    assert "matches" in res.json()["backhaul_result"]
+    body = res.json()
+    assert "matches" in body["backhaul_result"]
+    options = body["next_load_options"]
+    assert options, "loads with a delivery city should get next-load options"
+    for opts in options.values():
+        rates = [o["effective_rate_per_mile"] for o in opts]
+        assert rates == sorted(rates, reverse=True)  # best pay per mile first
 
 
 def test_rejects_a_file_that_is_not_excel():
