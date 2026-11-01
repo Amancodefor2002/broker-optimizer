@@ -20,8 +20,12 @@ class Load(BaseModel):
     rate: float | None = None
     color_status: str | None = None  # broker's own priority tag, e.g. GREEN / BLUE
 
+    # Filled in by geocode.attach_coordinates. The *_place names are the
+    # matched town as it is usually written ("McBain, MI", not "MCBAIN, MI").
+    origin_place: str | None = None
     origin_lat: float | None = None
     origin_lon: float | None = None
+    destination_place: str | None = None
     destination_lat: float | None = None
     destination_lon: float | None = None
 

@@ -140,9 +140,14 @@ def lookup_city_online(text: str) -> Place | None:
 
 def _read_online_cache() -> dict:
     try:
-        return json.loads(ONLINE_CACHE_PATH.read_text())
+        raw = json.loads(ONLINE_CACHE_PATH.read_text())
     except (OSError, ValueError):
         return {}
+    if not isinstance(raw, dict):
+        return {}
+    # Keep only entries in the current shape: [name, lat, lon], or None for "not found".
+    # The first version of this app cached [lat, lon]; those names simply get looked up again.
+    return {name: v for name, v in raw.items() if v is None or (isinstance(v, list) and len(v) == 3)}
 
 
 def _write_online_cache(cache: dict) -> None:
@@ -200,8 +205,10 @@ def attach_coordinates(loads: list[Load]) -> GeocodeReport:
 
     for load in loads:
         if load.origin in found:
-            load.origin_lat, load.origin_lon = found[load.origin].lat, found[load.origin].lon
+            place = found[load.origin]
+            load.origin_place, load.origin_lat, load.origin_lon = place.name, place.lat, place.lon
         if load.destination in found:
-            load.destination_lat, load.destination_lon = found[load.destination].lat, found[load.destination].lon
+            place = found[load.destination]
+            load.destination_place, load.destination_lat, load.destination_lon = place.name, place.lat, place.lon
 
     return GeocodeReport(corrected=corrections, unresolved=[n for n in unknown if n not in found])

@@ -40,7 +40,8 @@ app/
   main.py                 FastAPI routes wiring it together
   data/us_cities.csv      ~36,000 US places for offline lookups (sources: data/SOURCES.md)
 frontend/
-  index.html    Dashboard — upload, parsed table with flags, backhaul results
+  index.html               Dashboard: upload, map of every lane, flagged table, next-load suggestion
+  vendor/leaflet/          Leaflet 1.9.4 map library (BSD-2), bundled so the page needs no CDN
 scripts/
   build_city_table.py      Rebuilds data/us_cities.csv from its two sources
 tests/
@@ -153,6 +154,18 @@ Asheville by spelling alone.
   capped at 10 new names per upload. Anything it can't confirm is
   reported as unresolved rather than guessed, so those loads don't
   appear on the map or in matching.
+- **Distances are straight-line, not road miles.** Empty miles between
+  loads are measured "as the crow flies", so real driving distance is
+  longer. A routing API would fix this at the cost of speed and an
+  external dependency.
+- **On a board from only a few shippers, most "next loads" are return
+  trips.** The real board this was tested on has 328 loads from just 14
+  pickup cities, so the best next load is usually another load from
+  the same plant, reached by driving back empty. True backhauls need
+  loads that start near where trucks deliver.
+- **The map's background needs internet.** Lanes and cities are drawn
+  locally; the street map behind them comes from OpenStreetMap's tile
+  servers.
 
 ## Running it
 
@@ -162,8 +175,10 @@ uvicorn app.main:app --reload --reload-dir app
 # open http://127.0.0.1:8000
 ```
 
-Test immediately with the bundled synthetic sample:
-`samples/sample_load_board.xlsx` — click "Parse loads" and pick it.
+Test immediately with the bundled synthetic sample: click
+**Upload load board** and pick `samples/sample_load_board.xlsx`. Click
+any load to see its route, the empty drive to its next load, and that
+next load on the map.
 
 To adapt this to your own broker's export format, check `parser.py`'s
 `COL_*` constants against your actual column layout first.

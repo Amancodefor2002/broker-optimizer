@@ -53,7 +53,8 @@ def test_attach_coordinates_reports_corrections_and_failures():
     report = attach_coordinates(loads)
 
     assert loads[0].origin_lat is not None and loads[0].destination_lat is not None
-    assert loads[1].origin_lat is None
+    assert loads[0].destination_place == "Abilene, TX"  # the matched name, for display
+    assert loads[1].origin_lat is None and loads[1].origin_place is None
     assert [c.matched for c in report.corrected] == ["Abilene, TX"]
     assert report.unresolved == ["NOWHEREVILLE, TX"]
 
@@ -88,3 +89,12 @@ def test_unreachable_online_service_leaves_city_unresolved():
     # conftest.py makes every network call fail
     report = attach_coordinates([Load(row_index=1, origin="SPOFFORD, TX")])
     assert report.unresolved == ["SPOFFORD, TX"]
+
+
+def test_cache_entries_from_the_first_version_are_looked_up_again(monkeypatch):
+    geocode.ONLINE_CACHE_PATH.write_text('{"SPOFFORD, TX": [29.17, -100.41]}')  # old [lat, lon] shape
+    monkeypatch.setattr(geocode, "_query_nominatim", lambda query: _nominatim_reply("US-TX"))
+    loads = [Load(row_index=1, origin="SPOFFORD, TX")]
+    report = attach_coordinates(loads)
+    assert report.unresolved == []
+    assert loads[0].origin_place == "Spofford, TX"

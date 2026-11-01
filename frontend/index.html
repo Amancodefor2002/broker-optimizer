@@ -3,253 +3,911 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Load board — broker dashboard</title>
+<title>LoadLens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- opsz: Inter switches to its tighter "display" cut at large sizes (the summary numbers) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
 <style>
   :root {
-    --ink: #16181c;
-    --panel: #1e2126;
-    --panel-line: #2b2f36;
-    --paper: #f3f1ea;
-    --amber: #e08a2c;
-    --green: #4d8b5f;
-    --red: #c4515f;
-    --blue: #3f7fbf;
-    --text-dim: #9a9da3;
-    --mono: "IBM Plex Mono", "SF Mono", Menlo, monospace;
-    --sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    --bg: #f3f5f8;
+    --surface: #ffffff;
+    --line: #e1e6ed;
+    --line-strong: #cbd3de;
+    --ink: #16233a;
+    --ink-2: #3a475c;
+    --muted: #66748a;
+    --teal: #0c8587;
+    --teal-dark: #0a6f71;
+    --teal-soft: #e3f3f2;
+    --orange: #d9771c;
+    --red: #b93a3a;
+    --red-soft: #fcebeb;
+    --amber: #8a5800;
+    --amber-soft: #fff2d6;
+    --grey-soft: #eef1f5;
+    --font: "Inter", ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: var(--sans); background: var(--paper); color: var(--ink); }
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--ink);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .muted { color: var(--muted); }
+
+  /* ---------- top bar ---------- */
   .topbar {
-    background: var(--panel);
-    color: #fff;
-    padding: 18px 28px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    position: sticky; top: 0; z-index: 1000;
+    display: flex; align-items: center; gap: 16px;
+    min-height: 56px; padding: 0 20px;
+    background: var(--surface); border-bottom: 1px solid var(--line);
   }
-  .wordmark { font-family: var(--mono); font-size: 12px; color: var(--amber); text-transform: uppercase; letter-spacing: 0.08em; }
-  .topbar h1 { font-size: 18px; margin: 2px 0 0 0; }
-  .upload-area { display: flex; align-items: center; gap: 10px; }
-  .upload-area input[type=file] { font-family: var(--sans); font-size: 12px; color: #e7e5df; }
-  button {
-    padding: 9px 16px;
-    border-radius: 4px;
-    border: none;
-    font-weight: 600;
-    font-size: 13px;
-    cursor: pointer;
-    font-family: var(--sans);
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; white-space: nowrap; }
+  .logo {
+    width: 26px; height: 26px; border-radius: 7px;
+    display: grid; place-items: center;
+    background: var(--ink); color: #fff; font-size: 14px;
   }
-  .btn-primary { background: var(--amber); color: #1a1206; }
-  .btn-primary:hover { background: #ec9838; }
-  .btn-primary:disabled { background: #4a4234; color: #8a8175; cursor: not-allowed; }
-  .container { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
-  .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 22px; }
-  .stat-card {
-    background: #fff;
-    border: 1px solid #e2ddd0;
-    border-radius: 6px;
-    padding: 14px 16px;
+  .file-name { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30ch; }
+  .search { flex: 1; max-width: 420px; margin-left: auto; position: relative; }
+  .search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .search input {
+    width: 100%; height: 36px; padding: 0 12px 0 34px;
+    border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface);
   }
-  .stat-card .label { font-family: var(--mono); font-size: 11px; color: #8a8578; text-transform: uppercase; }
-  .stat-card .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
-  .stat-card.warn .value { color: var(--red); }
-  .section { margin-bottom: 28px; }
-  .section h2 { font-size: 15px; margin-bottom: 10px; color: #4a463c; }
-  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 6px; overflow: hidden; font-size: 13px; }
-  th { background: var(--panel); color: #e7e5df; text-align: left; padding: 8px 10px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
-  td { padding: 7px 10px; border-bottom: 1px solid #ece8dc; font-family: var(--mono); }
-  tr.flagged-dup { background: #fdeceb; }
-  tr.flagged-missing { background: #fdf6e8; }
-  tr.flagged-outlier-high { background: #fdeceb; }
-  tr.flagged-outlier-low { background: #e9f2fc; }
-  .tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; margin-left: 4px; }
-  .tag-green { background: #dcefe1; color: var(--green); }
-  .tag-blue { background: #dfeaf7; color: var(--blue); }
-  .empty-state { color: var(--text-dim); font-size: 13px; padding: 30px; text-align: center; }
-  .backhaul-btn-row { margin: 10px 0 16px 0; }
-  #status { font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-top: 8px; }
-  #status.err { color: var(--red); }
-  .match-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fff; border: 1px solid #e2ddd0; border-radius: 5px; margin-bottom: 6px; font-family: var(--mono); font-size: 12px; }
-  .match-arrow { color: var(--amber); font-weight: 700; }
+  .search input:disabled { background: var(--grey-soft); }
+  .btn-primary {
+    height: 36px; padding: 0 16px; border: 0; border-radius: 8px;
+    background: var(--teal); color: #fff; font-weight: 600; white-space: nowrap;
+  }
+  .btn-primary:hover { background: var(--teal-dark); }
+  .btn-primary:disabled { opacity: 0.6; cursor: progress; }
+  .btn-secondary {
+    height: 32px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--line-strong); background: var(--surface); font-weight: 500;
+  }
+  .btn-secondary:hover { border-color: var(--ink-2); }
+  .busy { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+  main { padding: 16px 20px 20px; display: grid; gap: 12px; }
+
+  /* ---------- empty state ---------- */
+  .empty { max-width: 560px; margin: 10vh auto 0; }
+  .empty h1 { font-size: 26px; line-height: 1.25; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .empty p { color: var(--ink-2); margin: 0 0 18px; max-width: 60ch; }
+  .empty .small { font-size: 13px; color: var(--muted); margin-top: 14px; }
+
+  .error {
+    background: var(--red-soft); color: var(--red);
+    border: 1px solid #efc6c6; border-radius: 10px; padding: 10px 14px;
+  }
+
+  /* ---------- summary ---------- */
+  .kpis {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .kpi { padding: 14px 18px; min-width: 0; }
+  .kpi + .kpi { border-left: 1px solid var(--line); }
+  .kpi-label { font-size: 13px; color: var(--muted); }
+  .kpi-value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .kpi-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  .notice {
+    background: #fff8e8; border: 1px solid #f0deb0; border-radius: 10px;
+    padding: 10px 14px; font-size: 13px; color: #5c4300;
+  }
+  .notice p { margin: 0; }
+  .notice .link { border: 0; background: none; padding: 0; color: inherit; text-decoration: underline; font-weight: 500; }
+  .notice ul { margin: 8px 0 0; padding-left: 18px; columns: 2 280px; }
+
+  /* ---------- filters ---------- */
+  .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .filters select {
+    height: 34px; padding: 0 10px; max-width: 280px;
+    border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface);
+  }
+  .chip {
+    height: 34px; padding: 0 14px; border-radius: 999px;
+    border: 1px solid var(--line-strong); background: var(--surface);
+  }
+  .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .count { margin-left: auto; color: var(--muted); font-size: 13px; }
+
+  /* ---------- workspace ---------- */
+  /* The app fills the window below the top bar; the map, table and detail
+     panel share whatever height is left and scroll inside themselves. */
+  .app { display: flex; flex-direction: column; gap: 12px; height: calc(100vh - 92px); }
+  .workspace {
+    flex: 1 1 0; min-height: 480px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr) 300px;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; min-height: 0; }
+
+  .map-panel { position: relative; }
+  #map { position: absolute; inset: 0; background: #f4f6f8; }
+  .leaflet-container { font: inherit; }
+  /* A faded street map, so the lanes and pickup cities drawn on top stay the loudest thing. */
+  .leaflet-tile-pane { filter: grayscale(1) brightness(1.1) contrast(0.78); opacity: 0.8; }
+  .legend {
+    position: absolute; left: 12px; bottom: 12px; z-index: 500;
+    display: grid; gap: 4px;
+    background: rgba(255, 255, 255, 0.94); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; color: var(--ink-2);
+  }
+  .legend span { display: flex; align-items: center; gap: 8px; }
+  .legend i { display: inline-block; width: 22px; height: 0; border-top: 3px solid var(--ink); }
+  .legend i.empty-miles { border-top: 3px dashed var(--orange); }
+  .legend i.next-load { border-top-color: var(--teal); }
+
+  .table-panel { display: flex; flex-direction: column; }
+  .table-scroll { overflow: auto; flex: 1; }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--surface); border-bottom: 1px solid var(--line);
+    text-align: left; font-weight: 500; color: var(--muted); padding: 0; white-space: nowrap;
+  }
+  thead th.num { text-align: right; }
+  th button {
+    all: unset; box-sizing: border-box; display: block; width: 100%;
+    padding: 10px 8px; cursor: pointer; text-align: inherit;
+  }
+  th button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+  th[aria-sort="ascending"] button::after { content: " ↑"; }
+  th[aria-sort="descending"] button::after { content: " ↓"; }
+  td { padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td:first-child, th:first-child button { padding-left: 12px; }
+  td.city { max-width: 128px; overflow: hidden; text-overflow: ellipsis; }
+  td.pickup { max-width: 84px; overflow: hidden; text-overflow: ellipsis; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f7f9fb; }
+  tbody tr[aria-selected="true"] { background: var(--teal-soft); box-shadow: inset 3px 0 0 var(--teal); }
+  tbody tr:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+  .off-map {
+    display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 4px;
+    border-radius: 50%; background: var(--grey-soft); color: var(--muted); font-size: 10px; font-weight: 600; vertical-align: 1px;
+  }
+  .no-rows { padding: 24px; color: var(--muted); }
+
+  .badge { display: inline-block; padding: 1px 7px; margin-right: 4px; border-radius: 999px; font-size: 11.5px; font-weight: 500; }
+  .badge.red { background: var(--red-soft); color: var(--red); }
+  .badge.amber { background: var(--amber-soft); color: var(--amber); }
+  .badge.grey { background: var(--grey-soft); color: var(--ink-2); }
+
+  /* ---------- detail ---------- */
+  .detail { padding: 18px; overflow: auto; }
+  .detail-empty { color: var(--muted); }
+  .detail h2 { font-size: 18px; line-height: 1.3; letter-spacing: -0.01em; margin: 0; }
+  .detail .meta { color: var(--muted); font-size: 13px; margin: 4px 0 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .tag { display: inline-flex; align-items: center; gap: 5px; }
+  .tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--tag-color, var(--muted)); }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 16px 0 4px; }
+  .stats div { min-width: 0; }
+  .stats dt { font-size: 12px; color: var(--muted); }
+  .stats dd { margin: 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .section-title { font-size: 13px; font-weight: 600; margin: 20px 0 8px; }
+  .checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  .checks li { font-size: 13px; padding-left: 10px; border-left: 3px solid var(--line-strong); color: var(--ink-2); }
+  .checks li.red { border-left-color: var(--red); }
+  .checks li.amber { border-left-color: #d9a441; }
+  .next { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .next-route { font-weight: 600; margin: 0 0 6px; }
+  .next .stats { margin: 8px 0 10px; }
+  .next .stats dd { font-size: 16px; }
+  .next-note { font-size: 13px; color: var(--ink-2); margin: 0 0 10px; }
+  .detail p.explain { font-size: 13px; color: var(--muted); margin: 0; }
+  .detail h2.panel-title { font-size: 16px; }
+  .detail .hint { font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
+  .origins { list-style: none; margin: 0; padding: 0; }
+  .origins li + li { border-top: 1px solid var(--line); }
+  .origins button {
+    all: unset; box-sizing: border-box; cursor: pointer;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: baseline;
+    width: 100%; padding: 9px 6px; border-radius: 6px;
+  }
+  .origins button:hover { background: #f7f9fb; }
+  .origins button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+  .origins button[aria-pressed="true"] { background: var(--teal-soft); }
+  .origins .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .origins .n, .origins .rpm { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .origins .rpm { min-width: 52px; }
+
+  @media (max-width: 1200px) {
+    .app { height: auto; }
+    .workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto; flex: none; }
+    .map-panel, .table-panel { height: 460px; }
+    .detail { grid-column: 1 / -1; }
+  }
+  @media (max-width: 760px) {
+    .topbar { flex-wrap: wrap; padding: 10px 16px; gap: 10px; }
+    .file-name { display: none; }
+    .search { order: 3; flex-basis: 100%; max-width: none; margin-left: 0; }
+    .topbar .btn-primary { margin-left: auto; }
+    main { padding: 12px 16px 16px; }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi:nth-child(3) { border-left: 0; }
+    .kpi:nth-child(n + 3) { border-top: 1px solid var(--line); }
+    .workspace { grid-template-columns: minmax(0, 1fr); }
+    .map-panel { height: 340px; }
+    .count { margin-left: 0; width: 100%; }
+  }
 </style>
 </head>
 <body>
-<div class="topbar">
-  <div>
-    <div class="wordmark">broker load board tool</div>
-    <h1>Load board dashboard</h1>
-  </div>
-  <div class="upload-area">
-    <input type="file" id="fileInput" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" />
-    <button class="btn-primary" id="parseBtn">Parse loads</button>
-  </div>
-</div>
+<header class="topbar">
+  <div class="brand"><span class="logo" aria-hidden="true">L</span>LoadLens</div>
+  <span class="file-name" id="fileName"></span>
+  <label class="search">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="search" type="search" placeholder="Search a city" aria-label="Search loads by city" disabled />
+  </label>
+  <span class="busy" id="busy" role="status" aria-live="polite"></span>
+  <button class="btn-primary" id="uploadBtn" type="button">Upload load board</button>
+  <input id="fileInput" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden />
+</header>
 
-<div class="container">
-  <div id="statusWrap"><div id="status">Upload a broker load board export (.xlsx) to begin.</div></div>
+<main>
+  <div class="error" id="error" role="alert" hidden></div>
 
-  <div id="results" style="display:none;">
-    <div class="stat-row">
-      <div class="stat-card"><div class="label">Loads found</div><div class="value" id="statLoads">—</div></div>
-      <div class="stat-card warn"><div class="label">Duplicates</div><div class="value" id="statDup">—</div></div>
-      <div class="stat-card warn"><div class="label">Missing fields</div><div class="value" id="statMissing">—</div></div>
-      <div class="stat-card"><div class="label">Avg $/mile</div><div class="value" id="statAvgRate">—</div></div>
-      <div class="stat-card warn"><div class="label">Rate outliers</div><div class="value" id="statOutliers">—</div></div>
-    </div>
+  <section class="empty" id="emptyState">
+    <h1>See your load board on a map</h1>
+    <p>Upload the Excel export from your dispatch software. Contact blocks, notes and load counts are skipped, and only real load rows are read.</p>
+    <button class="btn-primary" type="button" data-action="upload">Upload load board</button>
+    <p class="small">The file is read in memory and is not stored.</p>
+  </section>
 
-    <div class="section">
-      <h2>Backhaul matching</h2>
-      <div class="backhaul-btn-row">
-        <button class="btn-primary" id="backhaulBtn">Find backhaul matches</button>
-        <span id="backhaulStatus" style="font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-left: 10px;"></span>
+  <section class="app" id="app" hidden>
+      <div class="kpis">
+        <div class="kpi">
+          <div class="kpi-label">Loads</div>
+          <div class="kpi-value" id="kpiLoads">0</div>
+          <div class="kpi-sub" id="kpiLoadsSub"></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Average rate per mile</div>
+          <div class="kpi-value" id="kpiRate">–</div>
+          <div class="kpi-sub" id="kpiRateSub"></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Need a look</div>
+          <div class="kpi-value" id="kpiFlags">0</div>
+          <div class="kpi-sub" id="kpiFlagsSub"></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Empty miles between loads</div>
+          <div class="kpi-value" id="kpiEmpty">–</div>
+          <div class="kpi-sub" id="kpiEmptySub"></div>
+        </div>
       </div>
-      <div id="backhaulResults"></div>
-    </div>
 
-    <div class="section">
-      <h2>Parsed loads</h2>
-      <table>
-        <thead>
-          <tr><th>#</th><th>Origin</th><th>Destination</th><th>Pickup</th><th>Miles</th><th>Rate</th><th>$/mi</th><th>Status</th></tr>
-        </thead>
-        <tbody id="loadsTableBody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
+      <div class="notice" id="notice" hidden></div>
 
+      <div class="filters">
+        <select id="originFilter" aria-label="Pickup city"></select>
+        <button class="chip" id="needsLook" type="button" aria-pressed="false">Needs a look only</button>
+        <span class="count" id="count"></span>
+      </div>
+
+      <div class="workspace">
+        <div class="panel map-panel">
+          <div id="map" role="region" aria-label="Map of loads"></div>
+          <div class="legend" aria-hidden="true">
+            <span><i></i>Loaded trip</span>
+            <span><i class="empty-miles"></i>Empty miles</span>
+            <span><i class="next-load"></i>Next load</span>
+          </div>
+        </div>
+
+        <div class="panel table-panel">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th class="num" data-sort="row"><button type="button">#</button></th>
+                  <th data-sort="from"><button type="button">From</button></th>
+                  <th data-sort="to"><button type="button">To</button></th>
+                  <th data-sort="pickup"><button type="button">Pickup</button></th>
+                  <th class="num" data-sort="miles"><button type="button">Miles</button></th>
+                  <th class="num" data-sort="rate"><button type="button">Rate</button></th>
+                  <th class="num" data-sort="rpm"><button type="button">$/mi</button></th>
+                  <th data-sort="flags"><button type="button">Flags</button></th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+            <p class="no-rows" id="noRows" hidden>No loads match these filters.</p>
+          </div>
+        </div>
+
+        <aside class="panel detail" id="detail" aria-live="polite"></aside>
+      </div>
+  </section>
+</main>
+
+<script src="/static/vendor/leaflet/leaflet.js"></script>
 <script>
-  const API = "";
-  const el = id => document.getElementById(id);
-  let currentLoads = [];
-  let currentValidation = null;
-  let currentRates = null;
+  const $ = (sel) => document.querySelector(sel);
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const COLORS = { ink: "#16233a", muted: "#66748a", teal: "#0c8587", orange: "#d9771c" };
+  const TAG_COLORS = { GREEN: "#2f8a4c", BLUE: "#2f6fb5", YELLOW: "#c99a06", RED: "#b93a3a" };
+  const NO_NEXT_LOAD_MILES = 300; // matches NULL_MATCH_PENALTY_MILES in app/backhaul.py
 
-  el("parseBtn").addEventListener("click", async () => {
-    const file = el("fileInput").files[0];
-    const statusEl = el("status");
-    if (!file) {
-      statusEl.textContent = "Choose a .xlsx file first.";
-      statusEl.className = "err";
-      return;
+  const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+  const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const perMile = (v) => (v == null ? "–" : "$" + v.toFixed(2));
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  const state = {
+    loads: [], byRow: new Map(), issues: new Map(), rates: new Map(),
+    corrections: new Map(), unresolved: new Set(),
+    rateAvg: null, rateMedian: null,
+    matches: new Map(), backhaul: null,
+    selected: null,
+    filter: { q: "", origin: "", needsLook: false },
+    sort: { key: "row", dir: 1 },
+  };
+
+  // ---------- small text helpers ----------
+  function titleCase(text) {
+    // Only used for cities we couldn't match ("KEENWICK, WA" -> "Keenwick, WA").
+    const i = text.lastIndexOf(",");
+    const city = (i < 0 ? text : text.slice(0, i)).toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+    return i < 0 ? city : city + ", " + text.slice(i + 1).trim().toUpperCase();
+  }
+  const fromName = (l) => l.origin_place || titleCase(l.origin);
+  const toName = (l) => (l.destination ? l.destination_place || titleCase(l.destination) : null);
+
+  function pickupText(p) {
+    if (!p) return "–";
+    const m = /^(\d{4})-(\d{2})-(\d{2})T/.exec(p);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const t = p.trim().toLowerCase();
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  // The table only has room for a word: "Pending inventory" -> "Pending" (full text on hover and in the panel).
+  const pickupShort = (p) => { const full = pickupText(p); return full.length > 12 ? full.split(" ")[0] : full; };
+  // For a sentence: "pickup Jun 22", "pickup pending inventory", "pickup not given".
+  const pickupPhrase = (p) => (!p ? "not given" : /^\d{4}-/.test(p) ? pickupText(p) : pickupText(p).toLowerCase());
+  const joinWords = (words) => (words.length < 2 ? words.join("") : words.slice(0, -1).join(", ") + " and " + words.at(-1));
+
+  // ---------- turning the API answer into state ----------
+  function ingest(body) {
+    state.loads = body.loads;
+    state.byRow = new Map(body.loads.map((l) => [l.row_index, l]));
+    state.rates = new Map(body.rate_analysis.stats.map((s) => [s.row_index, s]));
+    state.rateAvg = body.rate_analysis.average_rate_per_mile || null;
+    state.rateMedian = body.rate_analysis.median_rate_per_mile || null;
+    state.corrections = new Map(body.geocoding.corrected.map((c) => [c.original, c.matched]));
+    state.unresolved = new Set(body.geocoding.unresolved);
+    state.matches = new Map();
+    state.backhaul = null;
+    state.selected = null;
+    state.filter = { q: "", origin: "", needsLook: false };
+
+    const flagsByRow = new Map();
+    for (const f of body.validation.flags) {
+      if (!flagsByRow.has(f.row_index)) flagsByRow.set(f.row_index, []);
+      flagsByRow.get(f.row_index).push(f);
     }
-    statusEl.textContent = "Parsing…";
-    statusEl.className = "";
-    el("parseBtn").disabled = true;
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch(`${API}/api/parse`, { method: "POST", body: formData });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.detail || `Server returned ${res.status}`);
-
-      currentLoads = body.loads;
-      currentValidation = body.validation;
-      currentRates = body.rate_analysis;
-      render(body);
-      statusEl.textContent = `Scanned ${body.total_rows_scanned} rows, found ${body.loads.length} loads, skipped ${body.skipped_rows} non-load rows.`;
-    } catch (e) {
-      statusEl.textContent = `Failed: ${e.message}`;
-      statusEl.className = "err";
-    } finally {
-      el("parseBtn").disabled = false;
+    // badges: short labels for the table. checks: full sentences for the side panel.
+    const MISSING = { missing_destination: "destination", missing_rate: "rate", missing_miles: "miles" };
+    state.issues = new Map();
+    for (const l of state.loads) {
+      const badges = [], checks = [], missing = [];
+      for (const f of flagsByRow.get(l.row_index) || []) {
+        if (f.flag_type === "duplicate") {
+          badges.push({ kind: "red", text: "Duplicate" });
+          checks.push({ kind: "red", text: f.detail });
+        } else if (MISSING[f.flag_type]) {
+          missing.push(MISSING[f.flag_type]);
+          checks.push({ kind: "grey", text: f.detail });
+        }
+      }
+      const r = state.rates.get(l.row_index);
+      if (r && r.is_outlier) {
+        badges.push({ kind: "amber", text: r.rate_per_mile < state.rateAvg ? "Low rate" : "High rate" });
+        checks.push({ kind: "amber", text: r.outlier_reason });
+      }
+      if (missing.length) badges.push({ kind: "grey", text: "Incomplete", title: `No ${joinWords(missing)}` });
+      state.issues.set(l.row_index, { badges, checks });
     }
+  }
+
+  // ---------- upload ----------
+  const fileInput = $("#fileInput");
+  for (const b of [$("#uploadBtn"), ...document.querySelectorAll('[data-action="upload"]')]) {
+    b.addEventListener("click", () => fileInput.click());
+  }
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    fileInput.value = "";
+    if (file) upload(file);
   });
 
-  function render(body) {
-    el("results").style.display = "block";
-    el("statLoads").textContent = body.loads.length;
-    el("statDup").textContent = body.validation.duplicate_count;
-    el("statMissing").textContent = body.validation.missing_field_count;
-    el("statAvgRate").textContent = `$${body.rate_analysis.average_rate_per_mile}`;
-    el("statOutliers").textContent = body.rate_analysis.outlier_count;
+  function setBusy(text) {
+    $("#busy").textContent = text || "";
+    $("#uploadBtn").disabled = Boolean(text);
+  }
+  function showError(message) {
+    const el = $("#error");
+    el.textContent = message;
+    el.hidden = !message;
+  }
 
-    const flagsByRow = {};
-    body.validation.flags.forEach(f => {
-      flagsByRow[f.row_index] = flagsByRow[f.row_index] || [];
-      flagsByRow[f.row_index].push(f);
+  async function postJson(url, options) {
+    const res = await fetch(url, options);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `The server answered ${res.status}.`);
+    return body;
+  }
+
+  async function upload(file) {
+    showError("");
+    setBusy(`Reading ${file.name}…`);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const body = await postJson("/api/parse", { method: "POST", body: form });
+      if (!body.loads.length) {
+        throw new Error(`No load rows were found in ${file.name}. A load row needs a pickup city written as "City, ST" and numbers (or blanks) for miles and rate.`);
+      }
+      ingest(body);
+      $("#fileName").textContent = file.name;
+      showApp();
+      renderAll();
+
+      setBusy("Chaining loads…");
+      const matched = await postJson("/api/backhaul-match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loads: body.loads }),
+      });
+      state.backhaul = matched.backhaul_result;
+      state.matches = new Map(matched.backhaul_result.matches.map((m) => [m.from_load_row, { to: m.to_load_row, deadhead: m.deadhead_miles }]));
+      renderKpis();
+      renderDetail();
+      drawSelection();
+    } catch (err) {
+      showError(err.message || "Something went wrong while reading the file.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function showApp() {
+    $("#emptyState").hidden = true;
+    $("#app").hidden = false;
+    $("#search").disabled = false;
+    $("#search").value = "";
+    $("#needsLook").setAttribute("aria-pressed", "false");
+    if (!map) initMap();
+    map.invalidateSize();
+  }
+
+  // ---------- rendering ----------
+  function renderAll() {
+    renderKpis();
+    renderNotice();
+    renderOriginFilter();
+    renderTable();
+    renderDetail();
+    drawOverview();
+    fitOverview();
+  }
+
+  function renderKpis() {
+    const loads = state.loads;
+    const ready = loads.filter((l) => l.destination && l.rate != null && l.miles != null).length;
+    $("#kpiLoads").textContent = whole.format(loads.length);
+    $("#kpiLoadsSub").textContent = `${whole.format(ready)} ready to quote`;
+
+    $("#kpiRate").textContent = perMile(state.rateAvg);
+    $("#kpiRateSub").textContent = state.rateMedian ? `Median ${perMile(state.rateMedian)}` : "No load has both rate and miles";
+
+    let flagged = 0, dup = 0, odd = 0, missing = 0;
+    for (const { badges } of state.issues.values()) {
+      if (badges.length) flagged++;
+      if (badges.some((b) => b.kind === "red")) dup++;
+      if (badges.some((b) => b.kind === "amber")) odd++;
+      if (badges.some((b) => b.kind === "grey")) missing++;
+    }
+    $("#kpiFlags").textContent = whole.format(flagged);
+    const parts = [];
+    if (dup) parts.push(`${dup} duplicate${dup === 1 ? "" : "s"}`);
+    if (odd) parts.push(`${odd} unusual rate${odd === 1 ? "" : "s"}`);
+    if (missing) parts.push(`${missing} incomplete`);
+    $("#kpiFlagsSub").textContent = parts.join(", ") || "Nothing to check";
+
+    if (!state.backhaul) {
+      $("#kpiEmpty").textContent = "…";
+      $("#kpiEmptySub").textContent = "Working out next loads";
+    } else {
+      const n = state.backhaul.matches.length;
+      $("#kpiEmpty").textContent = `${whole.format(state.backhaul.total_deadhead_miles)} mi`;
+      $("#kpiEmptySub").textContent = `${whole.format(n)} load${n === 1 ? " has" : "s have"} a next load`;
+    }
+  }
+
+  function renderNotice() {
+    const el = $("#notice");
+    const fixed = [...state.corrections.entries()];
+    const missing = [...state.unresolved];
+    if (!fixed.length && !missing.length) { el.hidden = true; return; }
+    const sentences = [];
+    if (fixed.length) {
+      sentences.push(`${fixed.length} misspelt city name${fixed.length === 1 ? " was" : "s were"} matched to the closest real town.`);
+    }
+    if (missing.length) {
+      sentences.push(`${missing.length === 1 ? "1 city" : missing.length + " cities"} couldn't be placed on the map: ${missing.map(esc).join(", ")}.`);
+    }
+    el.innerHTML = `<p>${sentences.join(" ")}${fixed.length ? ' <button class="link" type="button" aria-expanded="false">Review matches</button>' : ""}</p>
+      <ul hidden>${fixed.map(([from, to]) => `<li>${esc(from)} read as ${esc(to)}</li>`).join("")}</ul>`;
+    el.hidden = false;
+    const toggle = el.querySelector("button");
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        const list = el.querySelector("ul");
+        list.hidden = !list.hidden;
+        toggle.setAttribute("aria-expanded", String(!list.hidden));
+        toggle.textContent = list.hidden ? "Review matches" : "Hide matches";
+      });
+    }
+  }
+
+  function renderOriginFilter() {
+    const counts = new Map();
+    for (const l of state.loads) counts.set(l.origin, (counts.get(l.origin) || 0) + 1);
+    const names = new Map(state.loads.map((l) => [l.origin, fromName(l)]));
+    const options = [...counts.entries()].sort((a, b) => b[1] - a[1] || names.get(a[0]).localeCompare(names.get(b[0])));
+    $("#originFilter").innerHTML =
+      `<option value="">All pickup cities (${counts.size})</option>` +
+      options.map(([raw, n]) => `<option value="${esc(raw)}">${esc(names.get(raw))} (${n})</option>`).join("");
+    $("#originFilter").value = state.filter.origin;
+  }
+
+  function visibleLoads() {
+    const q = state.filter.q.trim().toLowerCase();
+    const rows = state.loads.filter((l) => {
+      if (state.filter.origin && l.origin !== state.filter.origin) return false;
+      if (state.filter.needsLook && !state.issues.get(l.row_index).badges.length) return false;
+      if (q) {
+        const text = [l.origin, l.destination, l.origin_place, l.destination_place].filter(Boolean).join(" ").toLowerCase();
+        if (!text.includes(q)) return false;
+      }
+      return true;
     });
-    const ratesByRow = {};
-    body.rate_analysis.stats.forEach(s => { ratesByRow[s.row_index] = s; });
-
-    const tbody = el("loadsTableBody");
-    tbody.innerHTML = "";
-    body.loads.forEach(load => {
-      const flags = flagsByRow[load.row_index] || [];
-      const rateStat = ratesByRow[load.row_index];
-      const tr = document.createElement("tr");
-
-      if (flags.some(f => f.flag_type === "duplicate")) tr.classList.add("flagged-dup");
-      else if (rateStat && rateStat.is_outlier) {
-        tr.classList.add(rateStat.rate_per_mile > body.rate_analysis.average_rate_per_mile ? "flagged-outlier-high" : "flagged-outlier-low");
-      } else if (flags.length) tr.classList.add("flagged-missing");
-
-      const colorTag = load.color_status
-        ? `<span class="tag tag-${load.color_status.toLowerCase()}">${load.color_status}</span>`
-        : "";
-      const flagText = flags.map(f => f.flag_type.replace(/_/g, " ")).join(", ");
-
-      tr.innerHTML = `
-        <td>${load.row_index}</td>
-        <td>${load.origin}</td>
-        <td>${load.destination || "<em>TBD</em>"}</td>
-        <td>${load.pickup_info || "—"}</td>
-        <td>${load.miles ?? "—"}</td>
-        <td>${load.rate != null ? "$" + load.rate : "—"}</td>
-        <td>${rateStat && rateStat.rate_per_mile != null ? "$" + rateStat.rate_per_mile.toFixed(2) : "—"}</td>
-        <td>${colorTag} ${flagText ? `<span style="color:var(--red); font-size:11px;">${flagText}</span>` : ""}</td>
-      `;
-      tbody.appendChild(tr);
+    const { key, dir } = state.sort;
+    const value = (l) => ({
+      row: l.row_index,
+      from: fromName(l),
+      to: toName(l),
+      pickup: l.pickup_info,
+      miles: l.miles,
+      rate: l.rate,
+      rpm: state.rates.get(l.row_index)?.rate_per_mile ?? null,
+      flags: state.issues.get(l.row_index).badges.length || null,
+    })[key];
+    return rows.sort((a, b) => {
+      const va = value(a), vb = value(b);
+      if (va == null || vb == null) return (va == null) - (vb == null) || a.row_index - b.row_index; // blanks always last
+      const cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
+      return cmp * dir || a.row_index - b.row_index;
     });
   }
 
-  el("backhaulBtn").addEventListener("click", async () => {
-    const statusEl = el("backhaulStatus");
-    const resultsEl = el("backhaulResults");
-    if (!currentLoads.length) return;
+  function cityCell(name, raw, lat) {
+    const off = raw && lat == null ? '<span class="off-map" title="Not on the map: this city could not be found">?</span>' : "";
+    return `<td class="city" title="${esc(name)}">${esc(name)}${off}</td>`;
+  }
 
-    statusEl.textContent = "Geocoding cities and solving assignment… this can take a while on first run.";
-    el("backhaulBtn").disabled = true;
-
-    try {
-      const res = await fetch(`${API}/api/backhaul-match`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loads: currentLoads })
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.detail || `Server returned ${res.status}`);
-
-      const result = body.backhaul_result;
-      statusEl.textContent = `${result.matches.length} matches found, ${result.total_deadhead_miles} total deadhead miles, ${result.unmatched_load_rows.length} loads left unmatched.`;
-      if (body.geocode_failures.length) {
-        statusEl.textContent += ` (${body.geocode_failures.length} cities could not be geocoded)`;
-      }
-
-      const loadsByRow = {};
-      currentLoads.forEach(l => { loadsByRow[l.row_index] = l; });
-
-      resultsEl.innerHTML = "";
-      result.matches.forEach(m => {
-        const from = loadsByRow[m.from_load_row];
-        const to = loadsByRow[m.to_load_row];
-        const div = document.createElement("div");
-        div.className = "match-row";
-        div.innerHTML = `Load ${m.from_load_row} (${from.origin} → ${from.destination})
-          <span class="match-arrow">⟶</span>
-          Load ${m.to_load_row} (${to.origin} → ${to.destination})
-          <span style="margin-left:auto; color:var(--text-dim);">${m.deadhead_miles} mi deadhead</span>`;
-        resultsEl.appendChild(div);
-      });
-    } catch (e) {
-      statusEl.textContent = `Failed: ${e.message}`;
-    } finally {
-      el("backhaulBtn").disabled = false;
+  function renderTable() {
+    const rows = visibleLoads();
+    const frag = document.createDocumentFragment();
+    for (const l of rows) {
+      const tr = document.createElement("tr");
+      tr.dataset.row = l.row_index;
+      tr.tabIndex = 0;
+      if (l.row_index === state.selected) tr.setAttribute("aria-selected", "true");
+      const rpm = state.rates.get(l.row_index)?.rate_per_mile;
+      tr.innerHTML =
+        `<td class="num muted">${l.row_index}</td>` +
+        cityCell(fromName(l), l.origin, l.origin_lat) +
+        (l.destination ? cityCell(toName(l), l.destination, l.destination_lat) : '<td class="muted">Not set</td>') +
+        `<td class="pickup" title="${esc(pickupText(l.pickup_info))}">${esc(pickupShort(l.pickup_info))}</td>` +
+        `<td class="num">${l.miles != null ? whole.format(l.miles) : "–"}</td>` +
+        `<td class="num">${l.rate != null ? money.format(l.rate) : "–"}</td>` +
+        `<td class="num">${perMile(rpm)}</td>` +
+        `<td>${state.issues.get(l.row_index).badges
+          .map((b) => `<span class="badge ${b.kind}"${b.title ? ` title="${esc(b.title)}"` : ""}>${b.text}</span>`).join("")}</td>`;
+      frag.appendChild(tr);
     }
+    $("#rows").replaceChildren(frag);
+    $("#noRows").hidden = rows.length > 0;
+    $("#count").textContent = `Showing ${whole.format(rows.length)} of ${whole.format(state.loads.length)}`;
+    for (const th of document.querySelectorAll("th[data-sort]")) {
+      th.setAttribute("aria-sort", th.dataset.sort === state.sort.key ? (state.sort.dir > 0 ? "ascending" : "descending") : "none");
+    }
+    return rows;
+  }
+
+  function renderDetail() {
+    const el = $("#detail");
+    const l = state.byRow.get(state.selected);
+    if (!l) {
+      renderOriginsOverview(el);
+      return;
+    }
+    const from = fromName(l), to = toName(l);
+    const rpm = state.rates.get(l.row_index)?.rate_per_mile;
+    const tag = l.color_status
+      ? `<span class="tag" style="--tag-color:${TAG_COLORS[l.color_status] || COLORS.muted}">${esc(titleCase(l.color_status))} tag</span>`
+      : "";
+
+    const checks = state.issues.get(l.row_index).checks.map((c) => `<li class="${c.kind}">${esc(c.text)}</li>`);
+    for (const raw of [l.origin, l.destination]) {
+      if (raw && state.corrections.has(raw)) checks.push(`<li>Written as “${esc(raw)}” in the file and read as ${esc(state.corrections.get(raw))}.</li>`);
+      if (raw && state.unresolved.has(raw)) checks.push(`<li class="amber">${esc(raw)} couldn't be found, so this load isn't on the map.</li>`);
+    }
+
+    el.innerHTML = `
+      <h2>${esc(from)} → ${to ? esc(to) : "destination not set"}</h2>
+      <p class="meta"><span>Load ${l.row_index}, pickup ${esc(pickupPhrase(l.pickup_info))}</span>${tag}</p>
+      <dl class="stats">
+        <div><dt>Rate</dt><dd>${l.rate != null ? money.format(l.rate) : "–"}</dd></div>
+        <div><dt>Miles</dt><dd>${l.miles != null ? whole.format(l.miles) : "–"}</dd></div>
+        <div><dt>Per mile</dt><dd>${perMile(rpm)}</dd></div>
+      </dl>
+      ${checks.length ? `<h3 class="section-title">Check before quoting</h3><ul class="checks">${checks.join("")}</ul>` : ""}
+      <h3 class="section-title">Next load for this truck</h3>
+      ${nextLoadHtml(l, to)}`;
+    const show = el.querySelector("[data-show]");
+    if (show) show.addEventListener("click", () => select(Number(show.dataset.show)));
+  }
+
+  // Shown in the side panel while no load is selected: where the loads come from.
+  function renderOriginsOverview(el) {
+    const groups = new Map();
+    for (const l of state.loads) {
+      const g = groups.get(l.origin) || { raw: l.origin, name: fromName(l), n: 0, rpms: [] };
+      g.n++;
+      const rpm = state.rates.get(l.row_index)?.rate_per_mile;
+      if (rpm != null) g.rpms.push(rpm);
+      groups.set(l.origin, g);
+    }
+    const rows = [...groups.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    el.innerHTML = `
+      <h2 class="panel-title">Pickup cities</h2>
+      <p class="hint">Pick a city to see only its loads, or click any load in the table.</p>
+      <ul class="origins">${rows.map((g) => {
+        const avg = g.rpms.length ? g.rpms.reduce((s, v) => s + v, 0) / g.rpms.length : null;
+        return `<li><button type="button" data-origin="${esc(g.raw)}" aria-pressed="${state.filter.origin === g.raw}">
+            <span class="name">${esc(g.name)}</span>
+            <span class="n">${g.n} load${g.n === 1 ? "" : "s"}</span>
+            <span class="rpm" title="Average rate per mile">${perMile(avg)}</span>
+          </button></li>`;
+      }).join("")}</ul>`;
+    for (const b of el.querySelectorAll("[data-origin]")) {
+      b.addEventListener("click", () => setOrigin(state.filter.origin === b.dataset.origin ? "" : b.dataset.origin));
+    }
+  }
+
+  function nextLoadHtml(l, to) {
+    if (!state.backhaul) return '<p class="explain">Working out the next load…</p>';
+    const m = state.matches.get(l.row_index);
+    const n = m && state.byRow.get(m.to);
+    if (n) {
+      const nFrom = fromName(n), nTo = toName(n);
+      const note = m.deadhead < 1
+        ? "It starts where this load ends, so the truck doesn't drive empty."
+        : `The truck drives ${whole.format(m.deadhead)} miles empty from ${esc(to)} to ${esc(nFrom)} to pick it up.`;
+      return `<div class="next">
+          <p class="next-route">${esc(nFrom)} → ${nTo ? esc(nTo) : "destination not set"}</p>
+          <dl class="stats">
+            <div><dt>Empty miles</dt><dd>${whole.format(m.deadhead)}</dd></div>
+            <div><dt>Rate</dt><dd>${n.rate != null ? money.format(n.rate) : "–"}</dd></div>
+            <div><dt>Per mile</dt><dd>${perMile(state.rates.get(n.row_index)?.rate_per_mile)}</dd></div>
+          </dl>
+          <p class="next-note">${note}</p>
+          <button class="btn-secondary" type="button" data-show="${n.row_index}">Show load ${n.row_index}</button>
+        </div>`;
+    }
+    if (!l.destination || l.destination_lat == null || l.origin_lat == null) {
+      return '<p class="explain">Both cities have to be on the map before a next load can be chained.</p>';
+    }
+    return `<p class="explain">No next load is chained after this one. Either nothing starts within ${NO_NEXT_LOAD_MILES} empty miles of ${esc(to)}, or the loads nearby fit better after another delivery.</p>`;
+  }
+
+  // ---------- map ----------
+  let map, lanesLayer, dotsLayer, selectionLayer, overviewBounds = null;
+
+  function initMap() {
+    map = L.map("map", { preferCanvas: true, zoomSnap: 0.5 }).setView([39.5, -98.35], 4);
+    map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 12,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+    lanesLayer = L.layerGroup().addTo(map);
+    dotsLayer = L.layerGroup().addTo(map);
+    selectionLayer = L.layerGroup().addTo(map);
+    // The map's box changes size when the window does, or when the notice above it appears.
+    new ResizeObserver(() => map.invalidateSize()).observe($("#map"));
+  }
+
+  function fitTo(bounds, options) {
+    map.invalidateSize(); // measure the box now, in case the layout just changed
+    map.fitBounds(bounds, { ...options, animate: !reducedMotion });
+  }
+
+  // A gentle curve instead of a straight line, bending to the right of the
+  // direction of travel. A trip out and the empty drive back then sit side
+  // by side instead of on top of each other.
+  function arc(from, to, bend = 0.2, steps = 32) {
+    const [y1, x1] = from, [y2, x2] = to;
+    const cx = (x1 + x2) / 2 + (y2 - y1) * bend;
+    const cy = (y1 + y2) / 2 - (x2 - x1) * bend;
+    const points = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps, u = 1 - t;
+      points.push([u * u * y1 + 2 * u * t * cy + t * t * y2, u * u * x1 + 2 * u * t * cx + t * t * x2]);
+    }
+    return points;
+  }
+
+  function drawOverview(rows = visibleLoads()) {
+    lanesLayer.clearLayers();
+    dotsLayer.clearLayers();
+    const pickups = new Map(), drops = new Map(), points = [];
+    for (const l of rows) {
+      if (l.origin_lat == null) continue;
+      const a = [l.origin_lat, l.origin_lon];
+      points.push(a);
+      const p = pickups.get(l.origin) || { name: fromName(l), at: a, n: 0 };
+      p.n++;
+      pickups.set(l.origin, p);
+      if (l.destination && l.destination_lat != null) {
+        const b = [l.destination_lat, l.destination_lon];
+        points.push(b);
+        drops.set(l.destination, { name: toName(l), at: b });
+        L.polyline(arc(a, b), { color: COLORS.ink, weight: 1.1, opacity: 0.26, interactive: false }).addTo(lanesLayer);
+      }
+    }
+    for (const d of drops.values()) {
+      L.circleMarker(d.at, { radius: 2.5, color: COLORS.muted, weight: 1, fillColor: "#fff", fillOpacity: 1 })
+        .bindTooltip(esc(d.name)).addTo(dotsLayer);
+    }
+    for (const [raw, p] of pickups) {
+      L.circleMarker(p.at, { radius: Math.min(4 + Math.sqrt(p.n) * 1.4, 14), color: "#fff", weight: 1.5, fillColor: COLORS.ink, fillOpacity: 0.9 })
+        .bindTooltip(`${esc(p.name)}: ${p.n} pickup${p.n === 1 ? "" : "s"}. Click to filter.`)
+        .on("click", () => setOrigin(raw))
+        .addTo(dotsLayer);
+    }
+    overviewBounds = points.length ? L.latLngBounds(points) : null;
+  }
+
+  function fitOverview() {
+    if (overviewBounds) fitTo(overviewBounds, { padding: [30, 30], maxZoom: 7 });
+  }
+
+  function endpoint(at, filled) {
+    return L.circleMarker(at, { radius: 6, color: COLORS.ink, weight: 2.5, fillColor: filled ? COLORS.ink : "#fff", fillOpacity: 1 });
+  }
+
+  function drawSelection() {
+    if (!map) return;
+    selectionLayer.clearLayers();
+    const l = state.byRow.get(state.selected);
+    if (!l) return;
+    const points = [];
+    const a = l.origin_lat != null ? [l.origin_lat, l.origin_lon] : null;
+    const b = l.destination_lat != null ? [l.destination_lat, l.destination_lon] : null;
+
+    const m = state.matches.get(l.row_index);
+    const n = m && state.byRow.get(m.to);
+    if (n && b && n.origin_lat != null) {
+      const c = [n.origin_lat, n.origin_lon];
+      if (n.destination_lat != null) {
+        const d = [n.destination_lat, n.destination_lon];
+        L.polyline(arc(c, d), { color: COLORS.teal, weight: 3, opacity: 0.9 }).addTo(selectionLayer);
+        L.circleMarker(d, { radius: 5, color: COLORS.teal, weight: 2, fillColor: COLORS.teal, fillOpacity: 1 })
+          .bindTooltip(`Load ${n.row_index} ends in ${esc(toName(n))}`).addTo(selectionLayer);
+        points.push(d);
+      }
+      if (m.deadhead >= 1) {
+        L.polyline(arc(b, c), { color: COLORS.orange, weight: 3, dashArray: "6 7" })
+          .bindTooltip(`${whole.format(m.deadhead)} empty miles`).addTo(selectionLayer);
+      }
+      points.push(c);
+    }
+    if (a && b) L.polyline(arc(a, b), { color: COLORS.ink, weight: 4, opacity: 0.95 }).addTo(selectionLayer);
+    if (a) { endpoint(a, false).bindTooltip(`Pickup: ${esc(fromName(l))}`).addTo(selectionLayer); points.push(a); }
+    if (b) { endpoint(b, true).bindTooltip(`Delivery: ${esc(toName(l))}`).addTo(selectionLayer); points.push(b); }
+    if (points.length) fitTo(L.latLngBounds(points), { padding: [56, 56], maxZoom: 8 });
+  }
+
+  // ---------- interaction ----------
+  function select(row, { scroll = true } = {}) {
+    state.selected = row;
+    for (const tr of document.querySelectorAll('#rows tr[aria-selected="true"]')) tr.removeAttribute("aria-selected");
+    const tr = document.querySelector(`#rows tr[data-row="${row}"]`);
+    if (tr) {
+      tr.setAttribute("aria-selected", "true");
+      if (scroll) tr.scrollIntoView({ block: "nearest" });
+    }
+    renderDetail();
+    drawSelection();
+  }
+
+  function clearSelection() {
+    state.selected = null;
+    for (const tr of document.querySelectorAll('#rows tr[aria-selected="true"]')) tr.removeAttribute("aria-selected");
+    selectionLayer.clearLayers();
+    renderDetail();
+    fitOverview();
+  }
+
+  function applyFilters() {
+    const rows = renderTable();
+    drawOverview(rows);
+    if (state.selected == null) fitOverview();
+  }
+
+  function setOrigin(raw) {
+    state.filter.origin = raw;
+    $("#originFilter").value = raw;
+    applyFilters();
+    if (state.selected == null) renderDetail(); // keeps the pickup-city list in step with the filter
+  }
+
+  $("#rows").addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-row]");
+    if (tr) select(Number(tr.dataset.row), { scroll: false });
   });
+  $("#rows").addEventListener("keydown", (e) => {
+    const tr = e.target.closest("tr[data-row]");
+    if (!tr) return;
+    let target = null;
+    if (e.key === "ArrowDown") target = tr.nextElementSibling;
+    else if (e.key === "ArrowUp") target = tr.previousElementSibling;
+    else if (e.key === "Enter" || e.key === " ") target = tr;
+    if (!target) return;
+    e.preventDefault();
+    target.focus();
+    select(Number(target.dataset.row));
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.selected != null && !e.target.closest("input, select")) clearSelection();
+  });
+
+  $("#search").addEventListener("input", (e) => { state.filter.q = e.target.value; applyFilters(); });
+  $("#originFilter").addEventListener("change", (e) => setOrigin(e.target.value));
+  $("#needsLook").addEventListener("click", (e) => {
+    state.filter.needsLook = !state.filter.needsLook;
+    e.currentTarget.setAttribute("aria-pressed", String(state.filter.needsLook));
+    applyFilters();
+  });
+  for (const th of document.querySelectorAll("th[data-sort]")) {
+    th.querySelector("button").addEventListener("click", () => {
+      const key = th.dataset.sort;
+      state.sort = { key, dir: state.sort.key === key ? -state.sort.dir : 1 };
+      renderTable();
+    });
+  }
 </script>
 </body>
 </html>

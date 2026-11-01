@@ -33,3 +33,12 @@ def test_backhaul_matching_runs_on_parsed_loads():
 def test_rejects_a_file_that_is_not_excel():
     res = client.post("/api/parse", files={"file": ("notes.txt", b"hello")})
     assert res.status_code == 422
+
+
+def test_dashboard_and_its_map_library_are_served():
+    page = client.get("/")
+    assert page.status_code == 200
+    assert page.headers["cache-control"] == "no-cache"  # browsers always fetch the latest dashboard
+    assert "/static/vendor/leaflet/leaflet.js" in page.text
+    assert client.get("/static/vendor/leaflet/leaflet.js").status_code == 200
+    assert client.get("/static/vendor/leaflet/leaflet.css").status_code == 200

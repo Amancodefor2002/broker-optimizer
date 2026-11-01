@@ -92,4 +92,7 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "index.html")
+    # "no-cache" = the browser must check for a newer page every time (it still
+    # gets a quick "not modified" when nothing changed). Without it, browsers
+    # can keep showing an old version of the dashboard after an update.
+    return FileResponse(FRONTEND_DIR / "index.html", headers={"Cache-Control": "no-cache"})
