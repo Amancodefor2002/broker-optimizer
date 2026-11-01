@@ -1,8 +1,14 @@
-# Broker load board optimizer
+# LoadLens: broker load board optimizer
 
 A tool for freight brokers that takes a real (messy) "Available Loads"
 Excel export, cleans it, flags data problems, analyzes pricing, and
 suggests backhaul matches to cut empty (deadhead) miles between loads.
+
+**Live demo:** https://loadlens-kr3t.onrender.com
+
+Upload a load-board export, or try `samples/sample_load_board.xlsx` from
+this repo. It runs on Render's free plan, so the first visit after a
+quiet spell takes about a minute while the server wakes up.
 
 ## Why this project
 
